@@ -71,6 +71,28 @@
   .hint { color: var(--muted); font-size: 12px; text-align: center; margin-top: 10px; line-height: 1.6; }
   .hint a { color: var(--accent); }
 
+  /* screenshots gallery */
+  #gallery { margin-top: 26px; }
+  .galleryHead {
+    font-size: 14px; font-weight: 600; margin-bottom: 10px; color: var(--text);
+  }
+  .galleryHead .muted { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .shotsGrid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+  }
+  .shotCard {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; cursor: pointer; transition: border-color .15s;
+  }
+  .shotCard:hover { border-color: var(--accent); }
+  .shotCard img { width: 100%; height: 108px; object-fit: cover; display: block; }
+  .shotCard .shotName {
+    font-size: 10.5px; color: var(--muted); padding: 6px 8px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .shotsEmpty { color: var(--muted); font-size: 13px; padding: 18px 0; }
+
   /* settings modal */
   .modal {
     position: fixed; inset: 0; background: rgba(0,0,0,.6);
@@ -109,6 +131,13 @@
       Live from the broadcaster's PC · Stream ends when the PC is off.<br>
       Wrong link? Open <b>Settings</b> and paste the current tunnel URL.
     </p>
+  </div>
+
+  <!-- screenshots gallery -->
+  <div id="gallery" class="screen hidden">
+    <div class="galleryHead">📸 Recent screenshots <span id="shotCount" class="muted"></span></div>
+    <div id="shots" class="shotsGrid"></div>
+    <p class="hint">Screenshots are taken every 30 s and stored on GitHub (oldest are auto-deleted at 5 GB).</p>
   </div>
 
   <!-- settings modal -->
@@ -225,6 +254,59 @@
     streamImg.src = url() + "/stream?token=" + encodeURIComponent(token());
     poll();
     setInterval(poll, 5000);
+    startGallery();
+  }
+
+  /* ---------- screenshots gallery ---------- */
+  var gallery = document.getElementById("gallery");
+  var shotsBox = document.getElementById("shots");
+  var shotCount = document.getElementById("shotCount");
+
+  function shotsBase() {
+    // Resolve relative to the SW/ path (works with or without trailing slash).
+    var p = window.location.pathname.replace(/\/[^\/]*$/, "/");
+    return p + "shots/";
+  }
+
+  function loadShots() {
+    var m = shotsBase() + "manifest.json?t=" + Date.now();
+    fetch(m, { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (j) {
+        var list = (j && j.shots) || [];
+        shotCount.textContent = list.length ? "(" + list.length + ")" : "";
+        shotsBox.innerHTML = "";
+        if (!list.length) {
+          shotsBox.innerHTML = '<div class="shotsEmpty">No screenshots yet - they appear here every 30 s.</div>';
+          return;
+        }
+        list.forEach(function (s) {
+          var card = document.createElement("a");
+          card.className = "shotCard";
+          card.href = shotsBase() + s.name;
+          card.target = "_blank";
+          card.rel = "noopener";
+          var img = document.createElement("img");
+          img.loading = "lazy";
+          img.alt = s.name;
+          img.src = shotsBase() + s.name;
+          var label = document.createElement("div");
+          label.className = "shotName";
+          label.textContent = s.name.replace(/\.jpg$/, "");
+          card.appendChild(img);
+          card.appendChild(label);
+          shotsBox.appendChild(card);
+        });
+      })
+      .catch(function () {
+        shotsBox.innerHTML = '<div class="shotsEmpty">Gallery not available yet.</div>';
+      });
+  }
+
+  function startGallery() {
+    gallery.classList.remove("hidden");
+    loadShots();
+    setInterval(loadShots, 30000);
   }
 
   /* ---------- password gate ---------- */
