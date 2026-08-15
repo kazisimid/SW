@@ -295,45 +295,69 @@
     return "https://raw.githubusercontent.com/kazisimid/SW/main/shots/";
   }
 
+  /* Full gallery: list ALL screenshots from the GitHub API (the repo's file
+     tree), not just the newest 200 in manifest.json - so the gallery grows
+     up to the 5 GB storage cap with no fixed picture limit. */
+  var TREES_API = "https://api.github.com/repos/kazisimid/SW/git/trees/main?recursive=1";
+
+  function renderShots(list) {
+    shotCount.textContent = list.length ? "(" + list.length + ")" : "";
+    shotsBox.innerHTML = "";
+    if (!list.length) {
+      shotsBox.innerHTML = '<div class="shotsEmpty">No screenshots yet - they appear here every 30 s.</div>';
+      return;
+    }
+    list.forEach(function (s) {
+      var card = document.createElement("a");
+      card.className = "shotCard";
+      card.href = shotsBase() + s.name;
+      card.target = "_blank";
+      card.rel = "noopener";
+      var img = document.createElement("img");
+      img.loading = "lazy";
+      img.alt = s.name;
+      img.src = shotsBase() + s.name;
+      var label = document.createElement("div");
+      label.className = "shotName";
+      label.textContent = s.name.replace(/\.jpg$/, "");
+      card.appendChild(img);
+      card.appendChild(label);
+      shotsBox.appendChild(card);
+    });
+  }
+
   function loadShots() {
-    var m = shotsBase() + "manifest.json?t=" + Date.now();
-    fetch(m, { cache: "no-store" })
+    fetch(TREES_API + "&t=" + Date.now(), { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
       .then(function (j) {
-        var list = (j && j.shots) || [];
-        shotCount.textContent = list.length ? "(" + list.length + ")" : "";
-        shotsBox.innerHTML = "";
-        if (!list.length) {
-          shotsBox.innerHTML = '<div class="shotsEmpty">No screenshots yet - they appear here every 30 s.</div>';
-          return;
-        }
-        list.forEach(function (s) {
-          var card = document.createElement("a");
-          card.className = "shotCard";
-          card.href = shotsBase() + s.name;
-          card.target = "_blank";
-          card.rel = "noopener";
-          var img = document.createElement("img");
-          img.loading = "lazy";
-          img.alt = s.name;
-          img.src = shotsBase() + s.name;
-          var label = document.createElement("div");
-          label.className = "shotName";
-          label.textContent = s.name.replace(/\.jpg$/, "");
-          card.appendChild(img);
-          card.appendChild(label);
-          shotsBox.appendChild(card);
+        var list = ((j && j.tree) || []).filter(function (t) {
+          return t.type === "blob" && t.path.indexOf("shots/") === 0 &&
+                 t.path.slice(-4) === ".jpg";
+        }).map(function (t) {
+          return { name: t.path.slice(6), size: t.size || 0 };
+        }).sort(function (a, b) {
+          return a.name < b.name ? 1 : -1;   // newest first
         });
+        renderShots(list);
       })
       .catch(function () {
-        shotsBox.innerHTML = '<div class="shotsEmpty">Gallery not available yet.</div>';
+        // Fallback: newest screenshots from the manifest (raw, no rate limit).
+        var m = shotsBase() + "manifest.json?t=" + Date.now();
+        fetch(m, { cache: "no-store" })
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+          .then(function (j) { renderShots((j && j.shots) || []); })
+          .catch(function () {
+            shotsBox.innerHTML = '<div class="shotsEmpty">Gallery not available yet.</div>';
+          });
       });
   }
 
   function startGallery() {
     gallery.classList.remove("hidden");
     loadShots();
-    setInterval(loadShots, 30000);
+    // Refresh every 5 minutes: the GitHub API allows ~60 requests/hour per
+    // browser, so a 30 s poll would hit the rate limit.
+    setInterval(loadShots, 300000);
   }
 
   /* ---------- password gate ---------- */
