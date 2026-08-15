@@ -93,6 +93,11 @@
   }
   .shotsEmpty { color: var(--muted); font-size: 13px; padding: 18px 0; }
 
+  .filters { margin: 12px 0 14px; display: flex; flex-direction: column; gap: 8px; }
+  .filterRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .filterRow input[type=text] { margin: 0; max-width: 190px; font-size: 13px; padding: 7px 10px; }
+  .filterLabel { color: var(--muted); font-size: 13px; white-space: nowrap; }
+
   /* settings modal */
   .modal {
     position: fixed; inset: 0; background: rgba(0,0,0,.6);
@@ -136,6 +141,16 @@
   <!-- screenshots gallery -->
   <div id="gallery" class="screen hidden">
     <div class="galleryHead">📸 Recent screenshots <span id="shotCount" class="muted"></span></div>
+    <div class="filters">
+      <input type="text" id="searchInput" placeholder="Search date/time… e.g. 15/08/2026 or 22:30" spellcheck="false">
+      <div class="filterRow">
+        <span class="filterLabel">Display from</span>
+        <input type="text" id="fromInput" placeholder="DD/MM/YYYY HH:MM:SS" spellcheck="false">
+        <span class="filterLabel">to</span>
+        <input type="text" id="toInput" placeholder="DD/MM/YYYY HH:MM:SS" spellcheck="false">
+        <button id="clearFilters" class="ghost">Clear</button>
+      </div>
+    </div>
     <div id="shots" class="shotsGrid"></div>
     <p class="hint">Screenshots are taken every 30 s and stored on GitHub (oldest are auto-deleted at 5 GB).</p>
   </div>
@@ -288,6 +303,12 @@
   var gallery = document.getElementById("gallery");
   var shotsBox = document.getElementById("shots");
   var shotCount = document.getElementById("shotCount");
+  var searchInput = document.getElementById("searchInput");
+  var fromInput = document.getElementById("fromInput");
+  var toInput = document.getElementById("toInput");
+  var clearBtn = document.getElementById("clearFilters");
+
+  var allShots = [];   // full list, newest first
 
   function shotsBase() {
     // Serve screenshots from raw.githubusercontent.com (always current,
@@ -300,11 +321,59 @@
      up to the 5 GB storage cap with no fixed picture limit. */
   var TREES_API = "https://api.github.com/repos/kazisimid/SW/git/trees/main?recursive=1";
 
-  function renderShots(list) {
+  /* Parse a screenshot filename "2026-08-15_22-49-08_354.jpg" into
+     { ts, label } where label is "DD/MM/YYYY, HH:MM:SS". */
+  function parseShot(name) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/.exec(name);
+    if (!m) return null;
+    var y = +m[1], mo = +m[2], d = +m[3], h = +m[4], mi = +m[5], s = +m[6];
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    var label = p(d) + "/" + p(mo) + "/" + y + ", " + p(h) + ":" + p(mi) + ":" + p(s);
+    return { ts: new Date(y, mo - 1, d, h, mi, s).getTime(), label: label };
+  }
+
+  /* Parse a filter value: "DD/MM/YYYY" or "DD/MM/YYYY HH:MM[:SS]".
+     When only a date is given: the FROM field means start of that day
+     (00:00:00) and the TO field means end of that day (23:59:59), so a
+     whole day is included. Pass isTo=true for the "to" field. */
+  function parseFilter(v, isTo) {
+    if (!v) return null;
+    v = v.trim();
+    var m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(v);
+    if (!m) return null;
+    var d = +m[1], mo = +m[2], y = +m[3],
+        h = m[4] !== undefined ? +m[4] : 0,
+        mi = m[5] !== undefined ? +m[5] : 0,
+        s = m[6] !== undefined ? +m[6] : 0;
+    if (m[4] === undefined) {          // date only -> whole day
+      if (isTo) { h = 23; mi = 59; s = 59; }
+    }
+    return { ts: new Date(y, mo - 1, d, h, mi, s).getTime() };
+  }
+
+  function applyFilters() {
+    var q = searchInput.value.trim().toLowerCase();
+    var from = parseFilter(fromInput.value, false);
+    var to = parseFilter(toInput.value, true);
+    var filtered = allShots.filter(function (s) {
+      if (from && s.ts < from.ts) return false;
+      if (to && s.ts > to.ts) return false;
+      if (q) {
+        var hay = (s.label + " " + s.name).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+    renderShots(filtered, q || from || to);
+  }
+
+  function renderShots(list, filtered) {
     shotCount.textContent = list.length ? "(" + list.length + ")" : "";
     shotsBox.innerHTML = "";
     if (!list.length) {
-      shotsBox.innerHTML = '<div class="shotsEmpty">No screenshots yet - they appear here every 30 s.</div>';
+      shotsBox.innerHTML = filtered
+        ? '<div class="shotsEmpty">No screenshots match your search/filter.</div>'
+        : '<div class="shotsEmpty">No screenshots yet - they appear here every 30 s.</div>';
       return;
     }
     list.forEach(function (s) {
@@ -315,11 +384,11 @@
       card.rel = "noopener";
       var img = document.createElement("img");
       img.loading = "lazy";
-      img.alt = s.name;
+      img.alt = s.label;
       img.src = shotsBase() + s.name;
       var label = document.createElement("div");
       label.className = "shotName";
-      label.textContent = s.name.replace(/\.jpg$/, "");
+      label.textContent = s.label;
       card.appendChild(img);
       card.appendChild(label);
       shotsBox.appendChild(card);
@@ -338,14 +407,28 @@
         }).sort(function (a, b) {
           return a.name < b.name ? 1 : -1;   // newest first
         });
-        renderShots(list);
+        allShots = list.map(function (s) {
+          var p = parseShot(s.name);
+          s.ts = p ? p.ts : 0;
+          s.label = p ? p.label : s.name.replace(/\.jpg$/, "");
+          return s;
+        });
+        applyFilters();
       })
       .catch(function () {
         // Fallback: newest screenshots from the manifest (raw, no rate limit).
         var m = shotsBase() + "manifest.json?t=" + Date.now();
         fetch(m, { cache: "no-store" })
           .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-          .then(function (j) { renderShots((j && j.shots) || []); })
+          .then(function (j) {
+            allShots = ((j && j.shots) || []).map(function (s) {
+              var p = parseShot(s.name);
+              s.ts = p ? p.ts : 0;
+              s.label = p ? p.label : s.name.replace(/\.jpg$/, "");
+              return s;
+            });
+            applyFilters();
+          })
           .catch(function () {
             shotsBox.innerHTML = '<div class="shotsEmpty">Gallery not available yet.</div>';
           });
@@ -358,6 +441,15 @@
     // Refresh every 5 minutes: the GitHub API allows ~60 requests/hour per
     // browser, so a 30 s poll would hit the rate limit.
     setInterval(loadShots, 300000);
+    searchInput.addEventListener("input", applyFilters);
+    fromInput.addEventListener("input", applyFilters);
+    toInput.addEventListener("input", applyFilters);
+    clearBtn.addEventListener("click", function () {
+      searchInput.value = "";
+      fromInput.value = "";
+      toInput.value = "";
+      applyFilters();
+    });
   }
 
   /* ---------- password gate ---------- */
