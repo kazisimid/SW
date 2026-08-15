@@ -200,8 +200,13 @@
 
   /* Auto-discover the stream URL: the broadcaster's PC pushes the current
      tunnel URL to stream-url.txt in this repo after every reboot, so the
-     page reconnects automatically without anyone editing Settings. */
-  var SYNC_FILE = "stream-url.txt";
+     page reconnects automatically without anyone editing Settings.
+
+     We read it from raw.githubusercontent.com (the latest committed version)
+     instead of the Pages-hosted copy - GitHub Pages rebuilds slowly and can
+     be rate-limited by the frequent screenshot uploads, while the raw file
+     is always current instantly. */
+  var SYNC_FILE = "https://raw.githubusercontent.com/kazisimid/SW/main/stream-url.txt";
   var syncChecked = false;
   var booted = false;
 
@@ -285,9 +290,9 @@
   var shotCount = document.getElementById("shotCount");
 
   function shotsBase() {
-    // Resolve relative to the SW/ path (works with or without trailing slash).
-    var p = window.location.pathname.replace(/\/[^\/]*$/, "/");
-    return p + "shots/";
+    // Serve screenshots from raw.githubusercontent.com (always current,
+    // not slowed by GitHub Pages rebuilds / rate limits).
+    return "https://raw.githubusercontent.com/kazisimid/SW/main/shots/";
   }
 
   function loadShots() {
