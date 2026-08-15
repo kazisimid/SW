@@ -112,13 +112,13 @@
     <button id="settingsBtn" class="ghost">Settings</button>
   </div>
 
-  <!-- password gate -->
+  <!-- password gate (protects the WHOLE page: stream + screenshots gallery) -->
   <div id="gate" class="screen card">
-    <h2>Private live stream</h2>
-    <p>Enter the password to watch.</p>
+    <h2>Private page</h2>
+    <p>This page is password protected. Enter the password to unlock everything.</p>
     <input type="password" id="pwInput" placeholder="Password" autocomplete="off">
     <div class="err" id="pwErr"></div>
-    <div><button id="unlockBtn">Watch</button></div>
+    <div><button id="unlockBtn">Unlock</button></div>
   </div>
 
   <!-- player -->
@@ -146,8 +146,6 @@
       <h2>Stream settings</h2>
       <label for="urlInput">Stream source URL (from the broadcaster's tunnel)</label>
       <input type="url" id="urlInput" placeholder="https://xxxx.trycloudflare.com" spellcheck="false">
-      <label for="pwInput2">Password (optional - prefill)</label>
-      <input type="password" id="pwInput2" placeholder="Password" autocomplete="off">
       <div class="row">
         <button id="saveBtn">Save</button>
         <button id="cancelBtn" class="ghost">Cancel</button>
@@ -160,6 +158,32 @@
   "use strict";
   var LS_URL = "swStreamUrl";
   var LS_TOKEN = "swToken";
+
+  /* ------------------------------------------------------------------
+     PAGE PASSWORD (whole-page gate)
+     ------------------------------------------------------------------
+     The password protects the ENTIRE page - the live stream AND the
+     screenshots gallery - and is checked right here in the page, so it
+     works even when the broadcaster's PC / stream is offline.
+
+     To change the password:
+       1. Edit the same password in streamserver.py (TOKEN) and
+          config.py (STREAM_TOKEN) on the PC.
+       2. Replace PAGE_HASH below with the new password's SHA-256.
+          (e.g. in PowerShell:  Get-FileHash -Algorithm SHA256 ...
+           or in Python:  hashlib.sha256(b'YOURPASSWORD').hexdigest())
+       3. Upload this index.html to the SW repo again.
+  ------------------------------------------------------------------ */
+  var PAGE_HASH = "be9fd2b1d461667dd2784d63129844e3eac0004197e3eec6ad0e115908c8e05c";
+
+  function sha256Hex(str) {
+    var buffer = new TextEncoder().encode(str);
+    return crypto.subtle.digest("SHA-256", buffer).then(function (buf) {
+      return Array.from(new Uint8Array(buf)).map(function (b) {
+        return b.toString(16).padStart(2, "0");
+      }).join("");
+    });
+  }
 
   var gate = document.getElementById("gate");
   var player = document.getElementById("player");
@@ -206,13 +230,11 @@
       });
   }
 
-  /* Validate password against the stream server's /info endpoint. */
+  /* Validate the password locally (whole-page gate). Works even when the
+     stream is offline - the same password is also used as the stream token. */
   function checkPassword(pw) {
-    var u = url();
-    if (!u) return Promise.resolve(false);
-    return fetch(u + "/info?token=" + encodeURIComponent(pw), { cache: "no-store" })
-      .then(function (r) { if (!r.ok) return false; return r.json().then(function (j) { return j.ok === true; }); })
-      .catch(function () { return false; });
+    if (!PAGE_HASH) return Promise.resolve(false);
+    return sha256Hex(pw).then(function (h) { return h === PAGE_HASH; });
   }
 
   /* Poll /info to show live/offline status and auto-reconnect the player. */
@@ -325,7 +347,7 @@
         pwErr.textContent = "";
         startPlayer();
       } else {
-        pwErr.textContent = "Wrong password, or the stream is offline. Check the URL in Settings.";
+        pwErr.textContent = "Wrong password.";
         document.getElementById("pwInput").select();
       }
     });
@@ -334,7 +356,6 @@
   /* ---------- settings ---------- */
   document.getElementById("settingsBtn").addEventListener("click", function () {
     document.getElementById("urlInput").value = url();
-    document.getElementById("pwInput2").value = "";
     settingsModal.classList.remove("hidden");
   });
   document.getElementById("cancelBtn").addEventListener("click", function () {
@@ -342,16 +363,13 @@
   });
   document.getElementById("saveBtn").addEventListener("click", function () {
     var u = document.getElementById("urlInput").value.trim().replace(/\/+$/, "");
-    var pw = document.getElementById("pwInput2").value.trim();
     settingsModal.classList.add("hidden");
     if (!u) { pwErr.textContent = "URL required - open Settings and paste it."; return; }
-    if (u !== url()) {            // new stream source -> ask for password again
-      localStorage.removeItem(LS_TOKEN);
+    if (u !== url()) {            // new stream source -> show the gate again
       localStorage.setItem(LS_URL, u);
       gate.classList.remove("hidden");
       player.classList.add("hidden");
       statusEl.classList.add("hidden");
-      if (pw) document.getElementById("pwInput").value = pw;
       document.getElementById("pwInput").focus();
       pwErr.textContent = "";
     }
