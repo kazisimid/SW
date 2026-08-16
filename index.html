@@ -96,6 +96,7 @@
   .filters { margin: 12px 0 14px; display: flex; flex-direction: column; gap: 8px; }
   .filterRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .filterRow input[type=text] { margin: 0; max-width: 190px; font-size: 13px; padding: 7px 10px; }
+  #searchInput { flex: 1; max-width: 340px; }
   .filterLabel { color: var(--muted); font-size: 13px; white-space: nowrap; }
 
   /* settings modal */
@@ -142,12 +143,16 @@
   <div id="gallery" class="screen hidden">
     <div class="galleryHead">📸 Recent screenshots <span id="shotCount" class="muted"></span></div>
     <div class="filters">
-      <input type="text" id="searchInput" placeholder="Search date/time… e.g. 15/08/2026 or 22:30" spellcheck="false">
+      <div class="filterRow">
+        <input type="text" id="searchInput" placeholder="Search date/time… e.g. 15/08/2026 or 22:30" spellcheck="false">
+        <button id="searchBtn" class="ghost">Search</button>
+      </div>
       <div class="filterRow">
         <span class="filterLabel">Display from</span>
         <input type="text" id="fromInput" placeholder="DD/MM/YYYY HH:MM:SS AM" spellcheck="false">
         <span class="filterLabel">to</span>
         <input type="text" id="toInput" placeholder="DD/MM/YYYY HH:MM:SS AM" spellcheck="false">
+        <button id="filterBtn" class="ghost">Filter</button>
         <button id="clearFilters" class="ghost">Clear</button>
       </div>
     </div>
@@ -306,6 +311,8 @@
   var searchInput = document.getElementById("searchInput");
   var fromInput = document.getElementById("fromInput");
   var toInput = document.getElementById("toInput");
+  var searchBtn = document.getElementById("searchBtn");
+  var filterBtn = document.getElementById("filterBtn");
   var clearBtn = document.getElementById("clearFilters");
 
   var allShots = [];   // full list, newest first
@@ -450,9 +457,12 @@
     // Refresh every 5 minutes: the GitHub API allows ~60 requests/hour per
     // browser, so a 30 s poll would hit the rate limit.
     setInterval(loadShots, 300000);
-    searchInput.addEventListener("input", applyFilters);
-    fromInput.addEventListener("input", applyFilters);
-    toInput.addEventListener("input", applyFilters);
+    searchBtn.addEventListener("click", applyFilters);
+    filterBtn.addEventListener("click", applyFilters);
+    // Enter in any field applies the search/filter too.
+    searchInput.addEventListener("keydown", function (e) { if (e.key === "Enter") applyFilters(); });
+    fromInput.addEventListener("keydown", function (e) { if (e.key === "Enter") applyFilters(); });
+    toInput.addEventListener("keydown", function (e) { if (e.key === "Enter") applyFilters(); });
     clearBtn.addEventListener("click", function () {
       searchInput.value = "";
       fromInput.value = "";
