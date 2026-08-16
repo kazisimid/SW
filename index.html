@@ -387,9 +387,23 @@
     shotCount.textContent = list.length ? "(" + list.length + ")" : "";
     shotsBox.innerHTML = "";
     if (!list.length) {
-      shotsBox.innerHTML = filtered
-        ? '<div class="shotsEmpty">No screenshots match your search/filter.</div>'
-        : '<div class="shotsEmpty">No screenshots yet - they appear here every 30 s.</div>';
+      if (filtered) {
+        // Show which dates DO have screenshots, so an empty result is never
+        // mistaken for a broken filter.
+        var avail = {};
+        allShots.forEach(function (s) {
+          var d = (s.label || "").split(",")[0];
+          if (d) avail[d] = (avail[d] || 0) + 1;
+        });
+        var days = Object.keys(avail).sort();
+        var text = days.length
+          ? "Screenshots available: " + days.join(", ")
+          : "No screenshots have been uploaded yet.";
+        shotsBox.innerHTML = '<div class="shotsEmpty">No screenshots match your search/filter.<br>' +
+          '<span class="muted">' + text + '.</span></div>';
+      } else {
+        shotsBox.innerHTML = '<div class="shotsEmpty">No screenshots yet - they appear here every 30 s.</div>';
+      }
       return;
     }
     list.forEach(function (s) {
