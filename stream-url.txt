@@ -1,1 +1,1 @@
-https://locks-railroad-taxes-submit.trycloudflare.com
+https://api.trycloudflare.com
